@@ -1,6 +1,7 @@
 # fn to segregate even and odd numbers in array
 # Time Complexity = O(n) & Space Complexity = O(1)
 
+
 def segregate_even_odd(arr, n):
     i = -1
     j = 0
