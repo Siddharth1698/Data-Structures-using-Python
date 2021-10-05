@@ -42,26 +42,26 @@ except ImportError:
 
 def train(cfg, local_rank, distributed, logger):
     debug_print(logger, 'prepare training')
-    model = build_detection_model(cfg) 
+    model = build_detection_model(cfg)
     debug_print(logger, 'end model construction')
 
     # modules that should be always set in eval mode
     # their eval() method should be called after model.train() is called
     eval_modules = (model.rpn, model.backbone, model.roi_heads.box,)
- 
+
     fix_eval_modules(eval_modules)
 
     # NOTE, we slow down the LR of the layers start with the names in slow_heads
     if cfg.MODEL.ROI_RELATION_HEAD.PREDICTOR == "IMPPredictor":
         slow_heads = ["roi_heads.relation.box_feature_extractor",
-                      "roi_heads.relation.union_feature_extractor.feature_extractor",]
+                      "roi_heads.relation.union_feature_extractor.feature_extractor", ]
     else:
         slow_heads = []
 
     # load pretrain layers to new layers
-    load_mapping = {"roi_heads.relation.box_feature_extractor" : "roi_heads.box.feature_extractor",
-                    "roi_heads.relation.union_feature_extractor.feature_extractor" : "roi_heads.box.feature_extractor"}
-    
+    load_mapping = {"roi_heads.relation.box_feature_extractor": "roi_heads.box.feature_extractor",
+                    "roi_heads.relation.union_feature_extractor.feature_extractor": "roi_heads.box.feature_extractor"}
+
     if cfg.MODEL.ATTRIBUTE_ON:
         load_mapping["roi_heads.relation.att_feature_extractor"] = "roi_heads.attribute.feature_extractor"
         load_mapping["roi_heads.relation.union_feature_extractor.att_feature_extractor"] = "roi_heads.attribute.feature_extractor"
@@ -69,15 +69,18 @@ def train(cfg, local_rank, distributed, logger):
     device = torch.device(cfg.MODEL.DEVICE)
     model.to(device)
 
-    num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
+    num_gpus = int(os.environ["WORLD_SIZE"]
+                   ) if "WORLD_SIZE" in os.environ else 1
     num_batch = cfg.SOLVER.IMS_PER_BATCH
-    optimizer = make_optimizer(cfg, model, logger, slow_heads=slow_heads, slow_ratio=10.0, rl_factor=float(num_batch))
+    optimizer = make_optimizer(
+        cfg, model, logger, slow_heads=slow_heads, slow_ratio=10.0, rl_factor=float(num_batch))
     scheduler = make_lr_scheduler(cfg, optimizer, logger)
     debug_print(logger, 'end optimizer and shcedule')
     # Initialize mixed-precision training
     use_mixed_precision = cfg.DTYPE == "float16"
     amp_opt_level = 'O1' if use_mixed_precision else 'O0'
-    model, optimizer = amp.initialize(model, optimizer, opt_level=amp_opt_level)
+    model, optimizer = amp.initialize(
+        model, optimizer, opt_level=amp_opt_level)
 
     if distributed:
         model = torch.nn.parallel.DistributedDataParallel(
@@ -98,12 +101,13 @@ def train(cfg, local_rank, distributed, logger):
     )
     # if there is certain checkpoint in output_dir, load it, else load pretrained detector
     if checkpointer.has_checkpoint():
-        extra_checkpoint_data = checkpointer.load(cfg.MODEL.PRETRAINED_DETECTOR_CKPT, 
-                                       update_schedule=cfg.SOLVER.UPDATE_SCHEDULE_DURING_LOAD)
+        extra_checkpoint_data = checkpointer.load(cfg.MODEL.PRETRAINED_DETECTOR_CKPT,
+                                                  update_schedule=cfg.SOLVER.UPDATE_SCHEDULE_DURING_LOAD)
         arguments.update(extra_checkpoint_data)
     else:
         # load_mapping is only used when we init current model from detection model.
-        checkpointer.load(cfg.MODEL.PRETRAINED_DETECTOR_CKPT, with_optim=False, load_mapping=load_mapping)
+        checkpointer.load(cfg.MODEL.PRETRAINED_DETECTOR_CKPT,
+                          with_optim=False, load_mapping=load_mapping)
     debug_print(logger, 'end load checkpointer')
     train_data_loader = make_data_loader(
         cfg,
@@ -133,7 +137,8 @@ def train(cfg, local_rank, distributed, logger):
     print_first_grad = True
     for iteration, (images, targets, _) in enumerate(train_data_loader, start_iter):
         if any(len(target) < 1 for target in targets):
-            logger.error(f"Iteration={iteration + 1} || Image Ids used for training {_} || targets Length={[len(target) for target in targets]}" )
+            logger.error(
+                f"Iteration={iteration + 1} || Image Ids used for training {_} || targets Length={[len(target) for target in targets]}")
         data_time = time.time() - end
         iteration = iteration + 1
         arguments["iteration"] = iteration
@@ -158,11 +163,14 @@ def train(cfg, local_rank, distributed, logger):
         # Otherwise apply loss scaling for mixed-precision recipe
         with amp.scale_loss(losses, optimizer) as scaled_losses:
             scaled_losses.backward()
-        
+
         # add clip_grad_norm from MOTIFS, tracking gradient, used for debug
-        verbose = (iteration % cfg.SOLVER.PRINT_GRAD_FREQ) == 0 or print_first_grad # print grad or not
+        # print grad or not
+        verbose = (iteration %
+                   cfg.SOLVER.PRINT_GRAD_FREQ) == 0 or print_first_grad
         print_first_grad = False
-        clip_grad_norm([(n, p) for n, p in model.named_parameters() if p.requires_grad], max_norm=cfg.SOLVER.GRAD_NORM_CLIP, logger=logger, verbose=verbose, clip=True)
+        clip_grad_norm([(n, p) for n, p in model.named_parameters() if p.requires_grad],
+                       max_norm=cfg.SOLVER.GRAD_NORM_CLIP, logger=logger, verbose=verbose, clip=True)
 
         optimizer.step()
 
@@ -197,18 +205,20 @@ def train(cfg, local_rank, distributed, logger):
         if iteration == max_iter:
             checkpointer.save("model_final", **arguments)
 
-        val_result = None # used for scheduler updating
+        val_result = None  # used for scheduler updating
         if cfg.SOLVER.TO_VAL and iteration % cfg.SOLVER.VAL_PERIOD == 0:
             logger.info("Start validating")
-            val_result = run_val(cfg, model, val_data_loaders, distributed, logger)
+            val_result = run_val(
+                cfg, model, val_data_loaders, distributed, logger)
             logger.info("Validation Result: %.4f" % val_result)
- 
+
         # scheduler should be called after optimizer.step() in pytorch>=1.1.0
         # https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
         if cfg.SOLVER.SCHEDULE.TYPE == "WarmupReduceLROnPlateau":
             scheduler.step(val_result, epoch=iteration)
             if scheduler.stage_count >= cfg.SOLVER.SCHEDULE.MAX_DECAY_STEP:
-                logger.info("Trigger MAX_DECAY_STEP at iteration {}.".format(iteration))
+                logger.info(
+                    "Trigger MAX_DECAY_STEP at iteration {}.".format(iteration))
                 break
         else:
             scheduler.step()
@@ -222,11 +232,13 @@ def train(cfg, local_rank, distributed, logger):
     )
     return model
 
+
 def fix_eval_modules(eval_modules):
     for module in eval_modules:
         for _, param in module.named_parameters():
             param.requires_grad = False
         # DO NOT use module.eval(), otherwise the module will be in the test mode, i.e., all self.training condition is set to False
+
 
 def run_val(cfg, model, val_data_loaders, distributed, logger):
     if distributed:
@@ -246,29 +258,30 @@ def run_val(cfg, model, val_data_loaders, distributed, logger):
     val_result = []
     for dataset_name, val_data_loader in zip(dataset_names, val_data_loaders):
         dataset_result = inference(
-                            cfg,
-                            model,
-                            val_data_loader,
-                            dataset_name=dataset_name,
-                            iou_types=iou_types,
-                            box_only=False if cfg.MODEL.RETINANET_ON else cfg.MODEL.RPN_ONLY,
-                            device=cfg.MODEL.DEVICE,
-                            expected_results=cfg.TEST.EXPECTED_RESULTS,
-                            expected_results_sigma_tol=cfg.TEST.EXPECTED_RESULTS_SIGMA_TOL,
-                            output_folder=None,
-                            logger=logger,
-                        )
+            cfg,
+            model,
+            val_data_loader,
+            dataset_name=dataset_name,
+            iou_types=iou_types,
+            box_only=False if cfg.MODEL.RETINANET_ON else cfg.MODEL.RPN_ONLY,
+            device=cfg.MODEL.DEVICE,
+            expected_results=cfg.TEST.EXPECTED_RESULTS,
+            expected_results_sigma_tol=cfg.TEST.EXPECTED_RESULTS_SIGMA_TOL,
+            output_folder=None,
+            logger=logger,
+        )
         synchronize()
         val_result.append(dataset_result)
     # support for multi gpu distributed testing
     gathered_result = all_gather(torch.tensor(dataset_result).cpu())
     gathered_result = [t.view(-1) for t in gathered_result]
     gathered_result = torch.cat(gathered_result, dim=-1).view(-1)
-    valid_result = gathered_result[gathered_result>=0]
+    valid_result = gathered_result[gathered_result >= 0]
     val_result = float(valid_result.mean())
     del gathered_result, valid_result
     torch.cuda.empty_cache()
     return val_result
+
 
 def run_test(cfg, model, distributed, logger):
     if distributed:
@@ -287,10 +300,12 @@ def run_test(cfg, model, distributed, logger):
     dataset_names = cfg.DATASETS.TEST
     if cfg.OUTPUT_DIR:
         for idx, dataset_name in enumerate(dataset_names):
-            output_folder = os.path.join(cfg.OUTPUT_DIR, "inference", dataset_name)
+            output_folder = os.path.join(
+                cfg.OUTPUT_DIR, "inference", dataset_name)
             mkdir(output_folder)
             output_folders[idx] = output_folder
-    data_loaders_val = make_data_loader(cfg, mode='test', is_distributed=distributed)
+    data_loaders_val = make_data_loader(
+        cfg, mode='test', is_distributed=distributed)
     for output_folder, dataset_name, data_loader_val in zip(output_folders, dataset_names, data_loaders_val):
         inference(
             cfg,
@@ -309,7 +324,8 @@ def run_test(cfg, model, distributed, logger):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PyTorch Relation Detection Training")
+    parser = argparse.ArgumentParser(
+        description="PyTorch Relation Detection Training")
     parser.add_argument(
         "--config-file",
         default="",
@@ -333,7 +349,8 @@ def main():
 
     args = parser.parse_args()
 
-    num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
+    num_gpus = int(os.environ["WORLD_SIZE"]
+                   ) if "WORLD_SIZE" in os.environ else 1
     args.distributed = num_gpus > 1
 
     if args.distributed:
