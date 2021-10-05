@@ -66,22 +66,23 @@ def train(cfg, local_rank, distributed, logger):
 
     # load pretrain layers to new layers
     load_mapping = {
-        "roi_heads.relation.box_feature_extractor": "roi_heads.box.feature_extractor",
-        "roi_heads.relation.union_feature_extractor.feature_extractor": "roi_heads.box.feature_extractor",
+        "roi_heads.relation.box_feature_extractor":
+        "roi_heads.box.feature_extractor",
+        "roi_heads.relation.union_feature_extractor.feature_extractor":
+        "roi_heads.box.feature_extractor",
     }
 
     if cfg.MODEL.ATTRIBUTE_ON:
         load_mapping[
-            "roi_heads.relation.att_feature_extractor"
-        ] = "roi_heads.attribute.feature_extractor"
+            "roi_heads.relation.att_feature_extractor"] = "roi_heads.attribute.feature_extractor"
         load_mapping[
-            "roi_heads.relation.union_feature_extractor.att_feature_extractor"
-        ] = "roi_heads.attribute.feature_extractor"
+            "roi_heads.relation.union_feature_extractor.att_feature_extractor"] = "roi_heads.attribute.feature_extractor"
 
     device = torch.device(cfg.MODEL.DEVICE)
     model.to(device)
 
-    num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
+    num_gpus = int(
+        os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     num_batch = cfg.SOLVER.IMS_PER_BATCH
     optimizer = make_optimizer(
         cfg,
@@ -96,7 +97,9 @@ def train(cfg, local_rank, distributed, logger):
     # Initialize mixed-precision training
     use_mixed_precision = cfg.DTYPE == "float16"
     amp_opt_level = "O1" if use_mixed_precision else "O0"
-    model, optimizer = amp.initialize(model, optimizer, opt_level=amp_opt_level)
+    model, optimizer = amp.initialize(model,
+                                      optimizer,
+                                      opt_level=amp_opt_level)
 
     if distributed:
         model = torch.nn.parallel.DistributedDataParallel(
@@ -164,7 +167,8 @@ def train(cfg, local_rank, distributed, logger):
     end = time.time()
 
     print_first_grad = True
-    for iteration, (images, targets, _) in enumerate(train_data_loader, start_iter):
+    for iteration, (images, targets, _) in enumerate(train_data_loader,
+                                                     start_iter):
         if any(len(target) < 1 for target in targets):
             logger.error(
                 f"Iteration={iteration + 1} || Image Ids used for training {_} || targets Length={[len(target) for target in targets]}"
@@ -196,7 +200,8 @@ def train(cfg, local_rank, distributed, logger):
 
         # add clip_grad_norm from MOTIFS, tracking gradient, used for debug
         # print grad or not
-        verbose = (iteration % cfg.SOLVER.PRINT_GRAD_FREQ) == 0 or print_first_grad
+        verbose = (iteration %
+                   cfg.SOLVER.PRINT_GRAD_FREQ) == 0 or print_first_grad
         print_first_grad = False
         clip_grad_norm(
             [(n, p) for n, p in model.named_parameters() if p.requires_grad],
@@ -217,22 +222,19 @@ def train(cfg, local_rank, distributed, logger):
 
         if iteration % 200 == 0 or iteration == max_iter:
             logger.info(
-                meters.delimiter.join(
-                    [
-                        "eta: {eta}",
-                        "iter: {iter}",
-                        "{meters}",
-                        "lr: {lr:.6f}",
-                        "max mem: {memory:.0f}",
-                    ]
-                ).format(
+                meters.delimiter.join([
+                    "eta: {eta}",
+                    "iter: {iter}",
+                    "{meters}",
+                    "lr: {lr:.6f}",
+                    "max mem: {memory:.0f}",
+                ]).format(
                     eta=eta_string,
                     iter=iteration,
                     meters=str(meters),
                     lr=optimizer.param_groups[-1]["lr"],
                     memory=torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
-                )
-            )
+                ))
 
         if iteration % checkpoint_period == 0:
             checkpointer.save("model_{:07d}".format(iteration), **arguments)
@@ -242,7 +244,8 @@ def train(cfg, local_rank, distributed, logger):
         val_result = None  # used for scheduler updating
         if cfg.SOLVER.TO_VAL and iteration % cfg.SOLVER.VAL_PERIOD == 0:
             logger.info("Start validating")
-            val_result = run_val(cfg, model, val_data_loaders, distributed, logger)
+            val_result = run_val(cfg, model, val_data_loaders, distributed,
+                                 logger)
             logger.info("Validation Result: %.4f" % val_result)
 
         # scheduler should be called after optimizer.step() in pytorch>=1.1.0
@@ -250,18 +253,16 @@ def train(cfg, local_rank, distributed, logger):
         if cfg.SOLVER.SCHEDULE.TYPE == "WarmupReduceLROnPlateau":
             scheduler.step(val_result, epoch=iteration)
             if scheduler.stage_count >= cfg.SOLVER.SCHEDULE.MAX_DECAY_STEP:
-                logger.info("Trigger MAX_DECAY_STEP at iteration {}.".format(iteration))
+                logger.info("Trigger MAX_DECAY_STEP at iteration {}.".format(
+                    iteration))
                 break
         else:
             scheduler.step()
 
     total_training_time = time.time() - start_training_time
     total_time_str = str(datetime.timedelta(seconds=total_training_time))
-    logger.info(
-        "Total training time: {} ({:.4f} s / it)".format(
-            total_time_str, total_training_time / (max_iter)
-        )
-    )
+    logger.info("Total training time: {} ({:.4f} s / it)".format(
+        total_time_str, total_training_time / (max_iter)))
     return model
 
 
@@ -276,15 +277,15 @@ def run_val(cfg, model, val_data_loaders, distributed, logger):
     if distributed:
         model = model.module
     torch.cuda.empty_cache()
-    iou_types = ("bbox",)
+    iou_types = ("bbox", )
     if cfg.MODEL.MASK_ON:
-        iou_types = iou_types + ("segm",)
+        iou_types = iou_types + ("segm", )
     if cfg.MODEL.KEYPOINT_ON:
-        iou_types = iou_types + ("keypoints",)
+        iou_types = iou_types + ("keypoints", )
     if cfg.MODEL.RELATION_ON:
-        iou_types = iou_types + ("relations",)
+        iou_types = iou_types + ("relations", )
     if cfg.MODEL.ATTRIBUTE_ON:
-        iou_types = iou_types + ("attributes",)
+        iou_types = iou_types + ("attributes", )
 
     dataset_names = cfg.DATASETS.VAL
     val_result = []
@@ -319,26 +320,28 @@ def run_test(cfg, model, distributed, logger):
     if distributed:
         model = model.module
     torch.cuda.empty_cache()
-    iou_types = ("bbox",)
+    iou_types = ("bbox", )
     if cfg.MODEL.MASK_ON:
-        iou_types = iou_types + ("segm",)
+        iou_types = iou_types + ("segm", )
     if cfg.MODEL.KEYPOINT_ON:
-        iou_types = iou_types + ("keypoints",)
+        iou_types = iou_types + ("keypoints", )
     if cfg.MODEL.RELATION_ON:
-        iou_types = iou_types + ("relations",)
+        iou_types = iou_types + ("relations", )
     if cfg.MODEL.ATTRIBUTE_ON:
-        iou_types = iou_types + ("attributes",)
+        iou_types = iou_types + ("attributes", )
     output_folders = [None] * len(cfg.DATASETS.TEST)
     dataset_names = cfg.DATASETS.TEST
     if cfg.OUTPUT_DIR:
         for idx, dataset_name in enumerate(dataset_names):
-            output_folder = os.path.join(cfg.OUTPUT_DIR, "inference", dataset_name)
+            output_folder = os.path.join(cfg.OUTPUT_DIR, "inference",
+                                         dataset_name)
             mkdir(output_folder)
             output_folders[idx] = output_folder
-    data_loaders_val = make_data_loader(cfg, mode="test", is_distributed=distributed)
+    data_loaders_val = make_data_loader(cfg,
+                                        mode="test",
+                                        is_distributed=distributed)
     for output_folder, dataset_name, data_loader_val in zip(
-        output_folders, dataset_names, data_loaders_val
-    ):
+            output_folders, dataset_names, data_loaders_val):
         inference(
             cfg,
             model,
@@ -356,7 +359,8 @@ def run_test(cfg, model, distributed, logger):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PyTorch Relation Detection Training")
+    parser = argparse.ArgumentParser(
+        description="PyTorch Relation Detection Training")
     parser.add_argument(
         "--config-file",
         default="",
@@ -380,12 +384,14 @@ def main():
 
     args = parser.parse_args()
 
-    num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
+    num_gpus = int(
+        os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     args.distributed = num_gpus > 1
 
     if args.distributed:
         torch.cuda.set_device(args.local_rank)
-        torch.distributed.init_process_group(backend="nccl", init_method="env://")
+        torch.distributed.init_process_group(backend="nccl",
+                                             init_method="env://")
         synchronize()
 
     cfg.merge_from_file(args.config_file)
