@@ -7,9 +7,8 @@ x = 0
 def boat(a, b, c, d, e):
     global x
     print(a, b, c, d, e)
-    if ((c == (a + b + c + d) - 2) and d == 2) or (
-        (c == (a + b + c + d) - 2) and b == 2
-    ):
+    if ((c == (a + b + c + d) - 2) and d == 2) or ((c == (a + b + c + d) - 2)
+                                                   and b == 2):
         print("Destination Reached", a, b, c, d, e)
         print("Number of Times boat travelled: ", x)
         return 0
