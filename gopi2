@@ -1,7 +1,7 @@
 from sklearn.ensemble import RandomForestClassifier
- 
+
 
 model = RandomForestClassifier(n_estimators = 501,
                             criterion = 'entropy')
-                             
+
 model.fit(X_train, y_train)
