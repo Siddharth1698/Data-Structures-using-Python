@@ -8,29 +8,26 @@ Basic training script for PyTorch
 from maskrcnn_benchmark.utils.env import setup_environment  # noqa F401 isort:skip
 
 import argparse
+import datetime
 import os
 import time
-import datetime
 
 import torch
-from torch.nn.utils import clip_grad_norm_
-
 from maskrcnn_benchmark.config import cfg
 from maskrcnn_benchmark.data import make_data_loader
-from maskrcnn_benchmark.solver import make_lr_scheduler
-from maskrcnn_benchmark.solver import make_optimizer
-from maskrcnn_benchmark.engine.trainer import reduce_loss_dict
 from maskrcnn_benchmark.engine.inference import inference
+from maskrcnn_benchmark.engine.trainer import reduce_loss_dict
 from maskrcnn_benchmark.modeling.detector import build_detection_model
-from maskrcnn_benchmark.utils.checkpoint import DetectronCheckpointer
-from maskrcnn_benchmark.utils.checkpoint import clip_grad_norm
+from maskrcnn_benchmark.solver import make_lr_scheduler, make_optimizer
+from maskrcnn_benchmark.utils.checkpoint import (DetectronCheckpointer,
+                                                 clip_grad_norm)
 from maskrcnn_benchmark.utils.collect_env import collect_env_info
-from maskrcnn_benchmark.utils.comm import synchronize, get_rank, all_gather
+from maskrcnn_benchmark.utils.comm import all_gather, get_rank, synchronize
 from maskrcnn_benchmark.utils.imports import import_file
-from maskrcnn_benchmark.utils.logger import setup_logger, debug_print
-from maskrcnn_benchmark.utils.miscellaneous import mkdir, save_config
+from maskrcnn_benchmark.utils.logger import debug_print, setup_logger
 from maskrcnn_benchmark.utils.metric_logger import MetricLogger
-
+from maskrcnn_benchmark.utils.miscellaneous import mkdir, save_config
+from torch.nn.utils import clip_grad_norm_
 
 # See if we can use apex.DistributedDataParallel instead of the torch default,
 # and enable mixed-precision via apex.amp
