@@ -1,0 +1,3 @@
+def model_yo(in,out):
+  multiply=in*out
+  return(multiply)
